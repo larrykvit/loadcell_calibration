@@ -17,6 +17,7 @@ import statistics
 import time
 # import argparse
 
+from tqdm import tqdm
 import serial.tools.list_ports
 from Phidget22.Devices import VoltageRatioInput
 from Phidget22.BridgeGain import BridgeGain
@@ -61,14 +62,14 @@ def generate_calibration_curve(
     # The phidgets bridge has a lot of noise if two loadcells are sampling at
     # different frequencies. Pick either 100ms or 50ms period for best results.
     # Anything lower is much worse.
-    loadcell_sample_interval = 100  # ms
+    loadcell_sample_interval = 50  # ms
     ch_ref.setDataInterval(loadcell_sample_interval)
     ch_dut.setDataInterval(loadcell_sample_interval)
 
     # verify that the rate has been changed TODO progromatic
     print("Loadcell rates")
-    print("REF:", ch_ref.getDataRate())
-    print("DUT:", ch_dut.getDataRate())
+    print("REF:", ch_ref.getDataRate(), "Hz")
+    print("DUT:", ch_dut.getDataRate(), "Hz")
 
     # TODO figure out best gain for calibration
     ch_ref.setBridgeGain(BridgeGain.BRIDGE_GAIN_128)
@@ -79,23 +80,22 @@ def generate_calibration_curve(
     ## Tare both loadcells
 
     loadcell_values = {loadcell_ref_ch: [], loadcell_dut_ch: []}
-    print(loadcell_values)
     def save_bridge_value(vri, value):
         loadcell_values[vri.getChannel()].append(value)
 
     ch_ref.setOnVoltageRatioChangeHandler(save_bridge_value)
     ch_dut.setOnVoltageRatioChangeHandler(save_bridge_value)
 
-    # TODO, would be fun to have a tqdm progress bar for this
-    print("getting values to tare loadcell")
-    # it seems like it takes a second for things to start recording
-    while len(loadcell_values[loadcell_ref_ch]) < 15:
-        print(len(loadcell_values[loadcell_ref_ch]))
-        time.sleep(0.1)
+    print("Getting values to tare loadcell")
+    tare_num_vals = 15
+    with tqdm(total=tare_num_vals, desc="Taring", unit="samples") as pbar:
+        while (num_vals := len(loadcell_values[loadcell_ref_ch])) < tare_num_vals:
+            pbar.update(num_vals - pbar.n)
+            time.sleep(loadcell_sample_interval/1000)
+        pbar.update(num_vals-pbar.n)
 
     ch_ref.setOnVoltageRatioChangeHandler(None)
     ch_dut.setOnVoltageRatioChangeHandler(None)
-    print(loadcell_values)
 
     tare_ref = statistics.fmean(loadcell_values[loadcell_ref_ch])
     tare_dut = statistics.fmean(loadcell_values[loadcell_dut_ch])
@@ -107,7 +107,7 @@ def generate_calibration_curve(
         return (value - tare_ref) * loadcell_ref_scale
 
 
-    print("tare * scale", tare_ref * loadcell_ref_scale)
+    print("tare * scale", tare_ref * loadcell_ref_scale, "kg")
 
     ## Assume positive is compression
     ## Start recodring both loadcells
@@ -120,19 +120,29 @@ def generate_calibration_curve(
     ch_dut.setOnVoltageRatioChangeHandler(save_bridge_value)
     
     while len(loadcell_values[loadcell_ref_ch]) == 0:
-        print("no vals")
-        time.sleep(0.1)
+        time.sleep(loadcell_sample_interval/1000)
 
-    test_load = 10.0
-    motor.ForwardM1(motor_addr, 127)
-    while (cur_load := convert_ref(loadcell_values[loadcell_ref_ch][-1])) < test_load:
-        print("cur load", cur_load)
-        time.sleep(0.1)
+    test_load = 150.0
+    print("Pushing on loadcell until test load")
+    motor.ForwardM1(motor_addr, 100)
+    with tqdm(total=test_load, unit="kg") as pbar:
+        while (cur_load := convert_ref(loadcell_values[loadcell_ref_ch][-1])) < test_load:
+            pbar.n = cur_load
+            pbar.refresh()
+            time.sleep(loadcell_sample_interval/1000)
+        pbar.n = test_load  # technically it could be larger, but tqdm doesn't like it
+        pbar.refresh()
 
-    motor.BackwardM1(motor_addr, 30)
-    while (cur_load := convert_ref(loadcell_values[loadcell_ref_ch][-1])) > 0.1:
-        print("cur load", cur_load)
-        time.sleep(0.1)
+    motor.BackwardM1(motor_addr, 20)
+    sample_count_at_peak = len(loadcell_values[loadcell_ref_ch])
+    print("test load reached, slowly reversing")
+    with tqdm(total=cur_load, unit="kg") as pbar:
+        while (cur_load := convert_ref(loadcell_values[loadcell_ref_ch][-1])) > 0.1:
+            pbar.n = cur_load
+            pbar.refresh()
+            time.sleep(loadcell_sample_interval/1000)
+        pbar.n = cur_load
+        pbar.refresh()
     
     print("moving back for one second")
     motor.BackwardM1(motor_addr, 127)
@@ -140,6 +150,7 @@ def generate_calibration_curve(
     motor.BackwardM1(motor_addr, 0)
 
     print(loadcell_values)
+    print(sample_count_at_peak)
 
 
     
