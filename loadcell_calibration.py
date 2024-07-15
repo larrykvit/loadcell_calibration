@@ -17,6 +17,7 @@ import statistics
 import time
 # import argparse
 
+import serial.tools.list_ports
 from Phidget22.Devices import VoltageRatioInput
 from Phidget22.BridgeGain import BridgeGain
 
@@ -28,13 +29,14 @@ def generate_calibration_curve(
         motor_addr: int,
         loadcell_ref_scale: float,
         loadcell_ref_ch: int,
-        loacell_dut_ch: int
+        loadcell_dut_ch: int
 ):
     """Return the readings of both loadcells.
     """
     ## motor controller setup
     print("setting up motor connection")
     motor = Roboclaw(motor_com, motor_baud)
+    motor.Open()
 
     ## Bridge adc setup
     print("setting up bridge adc")
@@ -42,9 +44,14 @@ def generate_calibration_curve(
     ch_dut = VoltageRatioInput.VoltageRatioInput()
 
     print("REF channel", loadcell_ref_ch)
-    print("DUT channel", loacell_dut_ch)
+    print("DUT channel", loadcell_dut_ch)
     ch_ref.setChannel(loadcell_ref_ch)
-    ch_dut.setChannel(loacell_dut_ch)
+    ch_dut.setChannel(loadcell_dut_ch)
+
+    print("opening attachement to bridge")
+    ch_ref.openWaitForAttachment(1000)
+    ch_dut.openWaitForAttachment(1000)
+
 
     # Setting the VoltageRatioChangeTrigger to 0 will result in the channel
     # firing events every DataInterval
@@ -71,37 +78,79 @@ def generate_calibration_curve(
     # TODO
     ## Tare both loadcells
 
-    loadcell_values = {ch_ref: [], ch_dut: []}
+    loadcell_values = {loadcell_ref_ch: [], loadcell_dut_ch: []}
+    print(loadcell_values)
     def save_bridge_value(vri, value):
-        loadcell_values[vri.self.getChannel()].append(value)
+        loadcell_values[vri.getChannel()].append(value)
 
     ch_ref.setOnVoltageRatioChangeHandler(save_bridge_value)
     ch_dut.setOnVoltageRatioChangeHandler(save_bridge_value)
 
-    print("opening attachement to bridge")
-    ch_ref.openWaitForAttachment(1000)
-    ch_dut.openWaitForAttachment(1000)
+    # TODO, would be fun to have a tqdm progress bar for this
+    print("getting values to tare loadcell")
+    # it seems like it takes a second for things to start recording
+    while len(loadcell_values[loadcell_ref_ch]) < 15:
+        print(len(loadcell_values[loadcell_ref_ch]))
+        time.sleep(0.1)
 
-    time.sleep(1)
+    ch_ref.setOnVoltageRatioChangeHandler(None)
+    ch_dut.setOnVoltageRatioChangeHandler(None)
+    print(loadcell_values)
 
-    ch_ref.close()
-    ch_dut.close()
+    tare_ref = statistics.fmean(loadcell_values[loadcell_ref_ch])
+    tare_dut = statistics.fmean(loadcell_values[loadcell_dut_ch])
 
-    tare_ref = statistics.fmean(loadcell_values[ch_ref])
-    tare_dut = statistics.fmean(loadcell_values[ch_dut])
+    print("tare ref:", tare_ref, "len of sample", len(loadcell_values[loadcell_ref_ch]))
+    print("tare dut:", tare_dut, "len of sample", len(loadcell_values[loadcell_dut_ch]))
 
-    print("tare ref:", tare_ref, "len of sample", len(loadcell_values[ch_ref]))
-    print("tare dut:", tare_dut, "len of sample", len(loadcell_values[ch_dut]))
+    def convert_ref(value: float) -> float:
+        return (value - tare_ref) * loadcell_ref_scale
+
+
+    print("tare * scale", tare_ref * loadcell_ref_scale)
 
     ## Assume positive is compression
     ## Start recodring both loadcells
+    print("recording the values")
 
+    # clear the value
+    loadcell_values = {loadcell_ref_ch: [], loadcell_dut_ch: []}
+
+    ch_ref.setOnVoltageRatioChangeHandler(save_bridge_value)
+    ch_dut.setOnVoltageRatioChangeHandler(save_bridge_value)
+    
+    while len(loadcell_values[loadcell_ref_ch]) == 0:
+        print("no vals")
+        time.sleep(0.1)
+
+    test_load = 10.0
+    motor.ForwardM1(motor_addr, 127)
+    while (cur_load := convert_ref(loadcell_values[loadcell_ref_ch][-1])) < test_load:
+        print("cur load", cur_load)
+        time.sleep(0.1)
+
+    motor.BackwardM1(motor_addr, 30)
+    while (cur_load := convert_ref(loadcell_values[loadcell_ref_ch][-1])) > 0.1:
+        print("cur load", cur_load)
+        time.sleep(0.1)
+    
+    print("moving back for one second")
+    motor.BackwardM1(motor_addr, 127)
+    time.sleep(1)
+    motor.BackwardM1(motor_addr, 0)
+
+    print(loadcell_values)
+
+
+    
 
 
 
 if __name__ == "__main__":
     # A bunch of hard coded variables for now
-    MOTOR_COM = "COM3"  # TODO progromatic it in the future
+    # The motor controller shows up as stm virtual com port.
+    # pick the first match.
+    MOTOR_COM = next(serial.tools.list_ports.grep("STMicroelectronics Virtual COM Port")).device
     MOTOR_BAUD = 115200  # This preconfigured for the controller
     MOTOR_ADDR = 0x80  # This is preconfigured
     # The motor controller library kinda sucks cause it needs the address passed
@@ -117,7 +166,14 @@ if __name__ == "__main__":
 
     LOADCELL_DUT_CH = 0
 
-    generate_calibration_curve()
+    generate_calibration_curve(
+        MOTOR_COM, 
+        MOTOR_BAUD, 
+        MOTOR_ADDR, 
+        LOADCELL_REF_SCALE, 
+        LOADCELL_REF_CH, 
+        LOADCELL_DUT_CH
+    )
 
     # Note: the mavin loadcell should be 2 mV / V for 200kg, which works out to
     # a scale of 200 kg / 2mV/V = 100 kg / mv/V or 100'000 kg / V/V
