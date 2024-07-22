@@ -110,18 +110,29 @@ def generate_calibration_curve(
     print("tare * scale", tare_ref * loadcell_ref_scale, "kg")
 
     ## Assume positive is compression
-    ## Start recodring both loadcells
+    # TODO - should just take the absolute value instead
+    ## Calibration curve
+    # The linear motor can be back driven, so if it is pushing on the loadcell
+    # and not being driven, it will slowly back off.
+    # To generate the curve, push the loadcell to the test load, and then back
+    # off slowly. The data from backing off should be used for 
+
     print("recording the values")
 
+    # TODO - consider keeping the tare values for better post processing.
     # clear the value
     loadcell_values = {loadcell_ref_ch: [], loadcell_dut_ch: []}
 
+    # Start recodring both loadcells
     ch_ref.setOnVoltageRatioChangeHandler(save_bridge_value)
     ch_dut.setOnVoltageRatioChangeHandler(save_bridge_value)
     
+    # Wait for the phidgets to start recording
     while len(loadcell_values[loadcell_ref_ch]) == 0:
         time.sleep(loadcell_sample_interval/1000)
 
+    # Push to test load
+    # TODO - make the push smoother
     test_load = 150.0
     print("Pushing on loadcell until test load")
     motor.ForwardM1(motor_addr, 100)
@@ -133,8 +144,13 @@ def generate_calibration_curve(
         pbar.n = test_load  # technically it could be larger, but tqdm doesn't like it
         pbar.refresh()
 
-    motor.BackwardM1(motor_addr, 20)
+    # Peak test load
+    motor.ForwardM1(motor_addr, 10)  # figure out a number that holds the load constantish
     sample_count_at_peak = len(loadcell_values[loadcell_ref_ch])
+    time.sleep(0)
+
+    # Reverse slowly to generate the data for the curve
+    motor.BackwardM1(motor_addr, 20)
     print("test load reached, slowly reversing")
     with tqdm(total=cur_load, unit="kg") as pbar:
         while (cur_load := convert_ref(loadcell_values[loadcell_ref_ch][-1])) > 0.1:
