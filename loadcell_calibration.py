@@ -12,9 +12,30 @@ Loadcell nomenclature:
 REF: reference that is calibrated
 DUT: device under test, to be calibrated
 
+0 - Drive Forward M1
+Drive motor 1 forward. Valid data range is 0 - 127. A value of 127 = full speed forward, 64 =
+about half speed forward and 0 = full stop.
+Send: [Address, 0, Value, CRC(2 bytes)]
+Receive: [0xFF]
+
+
+52 - Drive M1 With Signed Duty And Acceleration
+Drive M1 with a signed duty and acceleration value. The sign indicates which direction the motor
+will run. The acceleration values are not signed. This command is used to drive the motor by
+PWM and using an acceleration value for ramping. Accel is the rate per second at which the duty
+changes from the current duty to the specified duty.
+Send: [Address, 52, Duty(2 bytes), Accel(2 Bytes), CRC(2 bytes)]
+Receive: [0xFF]
+The duty value is signed and the range is -32768 to +32767(eg. +-100% duty). The accel value
+range is 0 to 655359(eg maximum acceleration rate is -100% to 100% in 100ms)
+
+
 """
 import statistics
 import time
+from pathlib import Path
+from datetime import datetime
+import numpy as np
 # import argparse
 
 from tqdm import tqdm
@@ -23,6 +44,7 @@ from Phidget22.Devices import VoltageRatioInput
 from Phidget22.BridgeGain import BridgeGain
 
 from roboclaw_3 import Roboclaw
+from parse_calibration_curve import parse_calibration_curve
 
 def generate_calibration_curve(
         motor_com: str,
@@ -31,7 +53,7 @@ def generate_calibration_curve(
         loadcell_ref_scale: float,
         loadcell_ref_ch: int,
         loadcell_dut_ch: int
-):
+) -> tuple[list[float], list[float]]:
     """Return the readings of both loadcells.
     """
     ## motor controller setup
@@ -146,7 +168,7 @@ def generate_calibration_curve(
 
     # Peak test load
     motor.ForwardM1(motor_addr, 10)  # figure out a number that holds the load constantish
-    sample_count_at_peak = len(loadcell_values[loadcell_ref_ch])
+    # sample_count_at_peak = len(loadcell_values[loadcell_ref_ch])
     time.sleep(0)
 
     # Reverse slowly to generate the data for the curve
@@ -166,11 +188,8 @@ def generate_calibration_curve(
     motor.BackwardM1(motor_addr, 0)
 
     print(loadcell_values)
-    print(sample_count_at_peak)
-
-
-    
-
+    # print(sample_count_at_peak)
+    return loadcell_values[loadcell_ref_ch], loadcell_values[loadcell_dut_ch]
 
 
 if __name__ == "__main__":
@@ -193,7 +212,9 @@ if __name__ == "__main__":
 
     LOADCELL_DUT_CH = 0
 
-    generate_calibration_curve(
+    loadcell_dut_serial = input("Serial no of DUT:")
+
+    loadcell_values_ref, loadcell_values_dut = generate_calibration_curve(
         MOTOR_COM, 
         MOTOR_BAUD, 
         MOTOR_ADDR, 
@@ -201,6 +222,33 @@ if __name__ == "__main__":
         LOADCELL_REF_CH, 
         LOADCELL_DUT_CH
     )
+
+    scale_dut, resid = parse_calibration_curve(
+        loadcell_values_ref, 
+        loadcell_values_dut, 
+        LOADCELL_REF_SCALE
+    )
+
+    # TODO Save loadcell values somewhere 
+    # save 5 values - the 3 inputs to the function (to reporduce) and the output
+    date_str = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    dir_data = Path("./data/")
+    dir_cal = dir_data / loadcell_dut_serial / date_str
+    print("Saving calibration curves to:", dir_cal)
+    dir_cal.mkdir(exist_ok=True)
+    np.savetxt(dir_cal / "loadcell_values_ref.txt", loadcell_values_ref)
+    np.savetxt(dir_cal / "loadcell_values_dut.txt", loadcell_values_dut)
+    np.savetxt(dir_cal / "loadcell_ref_scale.txt", [LOADCELL_REF_SCALE])
+
+    file_cal_logs = dir_data / "calibration_logs.csv"
+    file_cal_logs.touch(exist_ok=True)
+    print("Writing calivration data to log:", file_cal_logs)
+    # Adhoc csv file, TODO make this nicer
+    with open(file_cal_logs, mode="a") as f:
+        line = ", ".join((date_str, loadcell_dut_serial, str(scale_dut), str(resid)))
+        f.write(line)
+        f.write("\n")
+
 
     # Note: the mavin loadcell should be 2 mV / V for 200kg, which works out to
     # a scale of 200 kg / 2mV/V = 100 kg / mv/V or 100'000 kg / V/V
