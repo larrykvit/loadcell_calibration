@@ -187,7 +187,7 @@ def generate_calibration_curve(
     time.sleep(1)
     motor.BackwardM1(motor_addr, 0)
 
-    print(loadcell_values)
+    # print(loadcell_values)
     # print(sample_count_at_peak)
     return loadcell_values[loadcell_ref_ch], loadcell_values[loadcell_dut_ch]
 
@@ -212,7 +212,7 @@ if __name__ == "__main__":
 
     LOADCELL_DUT_CH = 0
 
-    loadcell_dut_serial = input("Serial no of DUT:")
+    loadcell_dut_serial = input("Serial no of DUT: ")
 
     loadcell_values_ref, loadcell_values_dut = generate_calibration_curve(
         MOTOR_COM, 
@@ -235,7 +235,7 @@ if __name__ == "__main__":
     dir_data = Path("./data/")
     dir_cal = dir_data / loadcell_dut_serial / date_str
     print("Saving calibration curves to:", dir_cal)
-    dir_cal.mkdir(exist_ok=True)
+    dir_cal.mkdir(parents= True, exist_ok=True)
     np.savetxt(dir_cal / "loadcell_values_ref.txt", loadcell_values_ref)
     np.savetxt(dir_cal / "loadcell_values_dut.txt", loadcell_values_dut)
     np.savetxt(dir_cal / "loadcell_ref_scale.txt", [LOADCELL_REF_SCALE])
@@ -246,8 +246,9 @@ if __name__ == "__main__":
     # Adhoc csv file, TODO make this nicer
     with open(file_cal_logs, mode="a") as f:
         line = ", ".join((date_str, loadcell_dut_serial, str(scale_dut), str(resid)))
-        f.write(line)
-        f.write("\n")
+        print(line, file=f)
+        # f.write(line)
+        # f.write("\n")
 
 
     # Note: the mavin loadcell should be 2 mV / V for 200kg, which works out to

@@ -6,7 +6,7 @@ under test.
 """
 
 import numpy as np
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 from scipy.interpolate import CubicSpline
 
 def interpolate_2x(vals):
@@ -117,6 +117,7 @@ if __name__ == "__main__":
     # 1/ 1e-05 V/V / kg = 100'000 kg / V/V
 
     # Sample data
+    # TODO read from the data folder instead
     # tare_ref = -7.643053929011026e-06
     # tare_dut = -8.271541446447372e-06
 

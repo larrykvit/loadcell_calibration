@@ -1,3 +1,4 @@
 Phidget22Native
 pyserial
 tqdm
+numpy
