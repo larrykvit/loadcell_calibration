@@ -210,7 +210,8 @@ if __name__ == "__main__":
 
     LOADCELL_REF_CH = 3  # Wired in the 3rd channel
 
-    LOADCELL_DUT_CH = 0
+    LOADCELL_DUT_CH = 1  # TODO make this an input
+    # TODO add logging to the save directory
 
     loadcell_dut_serial = input("Serial no of DUT: ")
 
