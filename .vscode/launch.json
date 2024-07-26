@@ -1,0 +1,21 @@
+{
+    "configurations": [
+        {
+            "name": "Pydebug: parse calibration",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "args": [
+                "${input:enterDir}"
+            ]
+        }
+    ],
+    "inputs": [
+    {
+      "id": "enterDir",
+      "type": "promptString",
+      "description": "Calibration data do use",
+      "default": "./data/2401028865/2024_07_25_10_37_24"
+    }
+  ]
+}
