@@ -11,6 +11,7 @@ Mavin NA128 is 2mv/V at 200kg
 """
 
 from pathlib import Path
+import argparse
 
 import numpy as np
 #import matplotlib.pyplot as plt
@@ -112,10 +113,17 @@ def parse_calibration_curve(
 
 
 if __name__ == "__main__":
+    # TODO make the description the doc of this file
+    parser = argparse.ArgumentParser(
+        description="Uses the lodacell calibration curves and generates a calibration value."
+    )
+    parser.add_argument("calibration_data_path", type=Path)
+    args = parser.parse_args()
 
-    # TODO make this path an input
-    dir_data = Path("./data")
-    dir_calibration = dir_data / "2401028865" / "2024_07_25_10_37_24"
+    # # TODO make this path an input
+    # dir_data = Path("./data")
+    # dir_calibration = dir_data / "2401028865" / "2024_07_25_10_37_24"
+    dir_calibration = args.calibration_data_path
 
     # Read the 3 inputs needed
     values_ref = np.loadtxt(dir_calibration / "loadcell_values_ref.txt")
