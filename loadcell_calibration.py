@@ -233,7 +233,7 @@ if __name__ == "__main__":
     # TODO Save loadcell values somewhere 
     # save 5 values - the 3 inputs to the function (to reporduce) and the output
     date_str = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    dir_data = Path("./data/")
+    dir_data = Path("../loadcell_calibration_data/data/")
     dir_cal = dir_data / loadcell_dut_serial / date_str
     print("Saving calibration curves to:", dir_cal)
     dir_cal.mkdir(parents= True, exist_ok=True)

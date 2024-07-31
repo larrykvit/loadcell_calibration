@@ -120,9 +120,6 @@ if __name__ == "__main__":
     parser.add_argument("calibration_data_path", type=Path)
     args = parser.parse_args()
 
-    # # TODO make this path an input
-    # dir_data = Path("./data")
-    # dir_calibration = dir_data / "2401028865" / "2024_07_25_10_37_24"
     dir_calibration = args.calibration_data_path
 
     # Read the 3 inputs needed

@@ -15,7 +15,7 @@
       "id": "enterDir",
       "type": "promptString",
       "description": "Calibration data do use",
-      "default": "./data/2401028865/2024_07_25_10_37_24"
+      "default": "../loadcell_calibration_data/data/2401028865/2024_07_25_10_37_24"
     }
   ]
 }
