@@ -19,6 +19,10 @@ The calibrated loadcell is [`Omega LC103B-500`](https://www.omega.ca/fr/force-an
 
 Both calibrated and uncalibrated loadcells are connected to strain gauge amplifier & ADC.
 
+Wiring that results in positive numbers the way things are loaded:
+- Mavin loadcell - green wire +, white wire -
+- Omega loadcell - green wire -, white wire +
+
 Currently that is a [`Phidget Bridge 4 input 1046_1`](https://www.phidgets.com/?prodid=1270). But might be changed once custom PCB is done.
 
 ## Interface
