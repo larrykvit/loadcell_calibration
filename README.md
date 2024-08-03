@@ -33,6 +33,10 @@ The MCP motor controller has the same API as the roboclaw motor controllers. The
 
 The MCP motor controller requires `PySerial`: `pip install pyserial`.
 
+MCP [datasheet](https://downloads.basicmicro.com/docs/mcp23x_datasheet.pdf)
+
+MCP [manual](https://downloads.basicmicro.com/docs/mcp_user_manual.pdf)
+
 ### Loadcell
 
 The phidgets bridge control also has a python library.
