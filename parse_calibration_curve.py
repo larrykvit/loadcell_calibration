@@ -14,7 +14,7 @@ from pathlib import Path
 import argparse
 
 import numpy as np
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 from scipy.interpolate import CubicSpline
 
 def interpolate_2x(vals):
@@ -51,6 +51,7 @@ def parse_calibration_curve(
     values_ref: list[float],
     values_dut: list[float],
     scale_ref: float,
+    to_plot=False
     ):
     # Tare isn't needed - curve fitting a line with offset is more accurate.
     # Its only needed if you are just looking at the ratio of the two inputs.
@@ -87,9 +88,26 @@ def parse_calibration_curve(
         key=lambda x: line_fit_residual(*x)
     )
 
+    if to_plot:
+        plt.plot(cut_dut)
+        plt.plot(cut_ref)
+        plt.show()
 
-    # TODO think about removing high acceleration points
-    slice_to_fit = slice(100, 500)  # TODO figure out the best way to get this
+        plt.plot(np.diff(cut_dut, n=2))
+        plt.plot(np.diff(cut_ref, n=2))
+        plt.show()
+
+    ref_val_max = np.max(cut_ref)
+    ref_val_min = np.min(cut_ref)
+    ref_val_delta = ref_val_max - ref_val_min
+
+    # the acceleration starts after a hardcoded minimal value
+    # currently it is 4kg and the max load of 100kg. That means that that 10%
+    # should cut out all load that doesn't use smooth moving.
+    start, end = np.where(cut_ref > 0.1 * ref_val_delta + ref_val_min)[0][[0,-1]]
+    print("10 % load starts, end", start, end)
+    # TODO see if this can be hardcoded even less
+    slice_to_fit = slice(start, end)
     # diff_ref = np.diff(cut_ref, n=1)
     # diff_dut = np.diff(cut_dut, n=1)
 
@@ -99,8 +117,20 @@ def parse_calibration_curve(
 
     print("fitline")
     fit_line, (resid, _, _, _) = np.polynomial.polynomial.Polynomial.fit(
-        cut_dut[slice_to_fit],cut_ref[slice_to_fit], 1, full=True)
+        cut_dut[slice_to_fit], cut_ref[slice_to_fit], 1, full=True)
     fit_coef = fit_line.convert().coef
+
+    # figure out where the error is coming from
+    if to_plot:
+        fit_ref = fit_line(cut_dut)
+        error = fit_ref - cut_ref
+        
+        plt.plot(cut_ref)
+        plt.plot(cut_dut)
+        plt.plot(error*1000)
+        plt.show()
+
+
     scale_dut = fit_coef[1] * scale_ref
     print("scale", scale_dut)
     print("error from  spec:", (1 - scale_dut / 100000)*100, "%")
@@ -118,6 +148,7 @@ if __name__ == "__main__":
         description="Uses the lodacell calibration curves and generates a calibration value."
     )
     parser.add_argument("calibration_data_path", type=Path)
+    # TODO make the path the latest calibration for default
     args = parser.parse_args()
 
     dir_calibration = args.calibration_data_path
@@ -127,6 +158,6 @@ if __name__ == "__main__":
     values_dut = np.loadtxt(dir_calibration / "loadcell_values_dut.txt")
     loadcell_ref_scale = np.loadtxt(dir_calibration / "loadcell_ref_scale.txt")
 
-    parse_calibration_curve(values_ref, values_dut, float(loadcell_ref_scale))
+    parse_calibration_curve(values_ref, values_dut, float(loadcell_ref_scale), to_plot=True)
 
 

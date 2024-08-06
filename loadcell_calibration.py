@@ -93,14 +93,17 @@ def generate_calibration_curve(
     print("REF:", ch_ref.getDataRate(), "Hz")
     print("DUT:", ch_dut.getDataRate(), "Hz")
 
-    # TODO figure out best gain for calibration
+    # Use maximum gain, since testing is done at this gain
     ch_ref.setBridgeGain(BridgeGain.BRIDGE_GAIN_128)
     ch_dut.setBridgeGain(BridgeGain.BRIDGE_GAIN_128)
 
     ## Ask if motor needs to move back, if so move it back
     # TODO
-    ## Tare both loadcells
 
+    ## Tare both loadcells
+    # Saving the data requires a callback function that processes the data.
+    # To stop the recording data set the call back to None.
+    # It takes a second or so to start getting data after the callback is set.
     loadcell_values = {loadcell_ref_ch: [], loadcell_dut_ch: []}
     def save_bridge_value(vri, value):
         loadcell_values[vri.getChannel()].append(value)
@@ -126,16 +129,31 @@ def generate_calibration_curve(
     print("tare dut:", tare_dut, "len of sample", len(loadcell_values[loadcell_dut_ch]))
 
     def convert_ref(value: float) -> float:
+        """Convert reference value to weight"""
         return (value - tare_ref) * loadcell_ref_scale
-
 
     print("tare * scale", tare_ref * loadcell_ref_scale, "kg")
 
     ## Assume positive is compression
     # TODO - should just take the absolute value instead
+    
     ## Calibration curve
     # The linear motor can be back driven, so if it is pushing on the loadcell
     # and not being driven, it will slowly back off.
+
+    # TODO - working on a smoother push
+    # The motor has 2 ways to move:
+    #  set velocity OR set velocity & acceleration limit
+    # Any sharp acceleration will cause issues for calibration since the two
+    # loadcells are not recording data at the same time. The values are 
+    # interploated. The less acceleartion, the more accurate the calibration.
+
+    # 1. Push until a minimal load using a set velocity. The contact between
+    # the ref & dut loadcell will be a bit of a spike.
+    # 2. Push until test load with limited acceleration.
+    # 3. Hangout at the test load for a bit.
+    # 4. Pull back slowly and with limited acceleration until minimal load.
+    # 5. Pull back quickly to reset the position.
     # To generate the curve, push the loadcell to the test load, and then back
     # off slowly. The data from backing off should be used for 
 
@@ -153,11 +171,35 @@ def generate_calibration_curve(
     while len(loadcell_values[loadcell_ref_ch]) == 0:
         time.sleep(loadcell_sample_interval/1000)
 
-    # Push to test load
-    # TODO - make the push smoother
-    test_load = 150.0
-    print("Pushing on loadcell until test load")
-    motor.ForwardM1(motor_addr, 100)
+    # 1. Push to minimal load
+    # currently the pressing bolt has a soft cap on it which pops off a bit
+    # at 4kg it is fully pressed in.
+    # TODO fix the mechanical cap so that this load can be lower.
+    load_minimal = 4
+    
+    print("Push to minimal load,", load_minimal)
+    motor.ForwardM1(motor_addr, 50)
+    with tqdm(total=load_minimal, unit="kg") as pbar:
+        while (cur_load := convert_ref(loadcell_values[loadcell_ref_ch][-1])) < load_minimal:
+            pbar.n = cur_load
+            pbar.refresh()
+            time.sleep(loadcell_sample_interval/1000)
+        pbar.n = load_minimal  # technically it could be larger, but tqdm doesn't like it
+        pbar.refresh()
+    motor.ForwardM1(motor_addr, 0)
+    time.sleep(0.5)  # time to slow the motor down to a stop.
+    print("Num values:", len(loadcell_values[loadcell_dut_ch]))
+
+    # 2. Push to test load
+    # TODO this load is much lower than the maximum for two reasons:
+    # - it takes time to slow down, so it overshoot by a lot
+    # - the loadcell bottoms out at 150kg TODO fix this
+    test_load = 70.0
+    print("Push to test load,", test_load)
+    # Duty -32768 to +32767, accel: is 0 to 655359 
+    # TODO figure out the numbers that work
+    accel_limit = int(0.01*655359)
+    motor.DutyAccelM1(motor_addr, accel_limit, int(0.6*32767))
     with tqdm(total=test_load, unit="kg") as pbar:
         while (cur_load := convert_ref(loadcell_values[loadcell_ref_ch][-1])) < test_load:
             pbar.n = cur_load
@@ -166,22 +208,28 @@ def generate_calibration_curve(
         pbar.n = test_load  # technically it could be larger, but tqdm doesn't like it
         pbar.refresh()
 
-    # Peak test load
-    motor.ForwardM1(motor_addr, 10)  # figure out a number that holds the load constantish
-    # sample_count_at_peak = len(loadcell_values[loadcell_ref_ch])
-    time.sleep(0)
+    # 3. Peak test load
+    motor.DutyAccelM1(motor_addr, accel_limit, 0)
+    # motor.ForwardM1(motor_addr, 10)  # figure out a number that holds the load constantish
+    print("Hangout at peak load")
+    time.sleep(2.0)
+    cur_load = convert_ref(loadcell_values[loadcell_ref_ch][-1])
+    print("load now at:", cur_load)
 
-    # Reverse slowly to generate the data for the curve
-    motor.BackwardM1(motor_addr, 20)
-    print("test load reached, slowly reversing")
+    # 4. Reverse slowly to generate the data for the curve
+    motor.DutyAccelM1(motor_addr, accel_limit, -int(0.1*32767))
+    print("Slowly reversing")
     with tqdm(total=cur_load, unit="kg") as pbar:
-        while (cur_load := convert_ref(loadcell_values[loadcell_ref_ch][-1])) > 0.1:
+        while (cur_load := convert_ref(loadcell_values[loadcell_ref_ch][-1])) > load_minimal:
             pbar.n = cur_load
             pbar.refresh()
             time.sleep(loadcell_sample_interval/1000)
         pbar.n = cur_load
         pbar.refresh()
     
+    print("Num values:", len(loadcell_values[loadcell_dut_ch]))
+
+    # 5. Move back quickly to reset
     print("moving back for one second")
     motor.BackwardM1(motor_addr, 127)
     time.sleep(1)
@@ -210,7 +258,7 @@ if __name__ == "__main__":
 
     LOADCELL_REF_CH = 3  # Wired in the 3rd channel
 
-    LOADCELL_DUT_CH = 1  # TODO make this an input
+    LOADCELL_DUT_CH = int(input("Loadcell dut channel: "))
     # TODO add logging to the save directory
 
     loadcell_dut_serial = input("Serial no of DUT: ")
