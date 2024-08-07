@@ -93,8 +93,16 @@ def parse_calibration_curve(
         plt.plot(cut_ref)
         plt.show()
 
-        plt.plot(np.diff(cut_dut, n=2))
-        plt.plot(np.diff(cut_ref, n=2))
+        vel_dut = np.gradient(cut_dut)
+        vel_ref = np.gradient(cut_ref)
+        accel_dut = np.gradient(vel_dut)
+        accel_ref = np.gradient(vel_ref)
+
+        plt.plot(accel_dut)
+        plt.plot(accel_ref)
+        plt.show()
+
+        plt.scatter(np.diff(cut_dut, n=2), np.diff(cut_ref, n=2))
         plt.show()
 
     ref_val_max = np.max(cut_ref)
