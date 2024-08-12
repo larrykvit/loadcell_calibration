@@ -3,3 +3,5 @@ pyserial
 tqdm
 numpy
 black
+scipy
+matplotlib
