@@ -17,10 +17,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import CubicSpline
 
+
 def interpolate_2x(vals):
     """Cubic interpolation in between each value"""
     xp = np.arange(0, len(vals), 1)  # indexes
-    x = np.arange(0, len(vals)-0.5, 0.5)  # half step indexes
+    x = np.arange(0, len(vals) - 0.5, 0.5)  # half step indexes
     assert len(xp) * 2 - 1 == len(x)
 
     # There are some peak loads when the motor stops, so a cubic spline fits
@@ -28,7 +29,7 @@ def interpolate_2x(vals):
     vals_spline = CubicSpline(xp, vals)
 
     # vals_linear = np.interp(x, xp, vals)
-    
+
     # plt.plot(x, vals_linear, label="linear")
     # plt.plot(x, vals_spline(x), label="cubic")
     # plt.plot(xp, vals, 'o', label='data')
@@ -37,22 +38,19 @@ def interpolate_2x(vals):
     return vals_spline(x)
 
 
-def line_fit_residual(x,y):
+def line_fit_residual(x, y):
     """Calculate how close the points fit to a line"""
     assert len(x) == len(y)
     assert x.ndim == 1
     assert y.ndim == 1
     # lol, this is the new np.polyfit
-    _, (resid, _, _, _) = np.polynomial.polynomial.Polynomial.fit(x,y,1, full=True)
+    _, (resid, _, _, _) = np.polynomial.polynomial.Polynomial.fit(x, y, 1, full=True)
     return resid[0]
 
 
 def parse_calibration_curve(
-    values_ref: list[float],
-    values_dut: list[float],
-    scale_ref: float,
-    to_plot=False
-    ):
+    values_ref: list[float], values_dut: list[float], scale_ref: float, to_plot=False
+):
     # Tare isn't needed - curve fitting a line with offset is more accurate.
     # Its only needed if you are just looking at the ratio of the two inputs.
     # TODO - figure out if the tare is really needed, or if you should just
@@ -78,14 +76,14 @@ def parse_calibration_curve(
 
     # The shift should make the plot of ref vs dut be a line. When it isn't
     # there will be a shift in both directions from this line.
-    min_len = min(len(interp_ref),  len(interp_dut))
+    min_len = min(len(interp_ref), len(interp_dut))
     slice_shift_back = slice(1, min_len)
-    slice_no_shift = slice(0, min_len-1)
+    slice_no_shift = slice(0, min_len - 1)
 
     cut_dut, cut_ref = min(
         (interp_dut[slice_shift_back], interp_ref[slice_no_shift]),  # DUT first
         (interp_dut[slice_no_shift], interp_ref[slice_shift_back]),  # REF first
-        key=lambda x: line_fit_residual(*x)
+        key=lambda x: line_fit_residual(*x),
     )
 
     if to_plot:
@@ -112,42 +110,40 @@ def parse_calibration_curve(
     # the acceleration starts after a hardcoded minimal value
     # currently it is 4kg and the max load of 100kg. That means that that 10%
     # should cut out all load that doesn't use smooth moving.
-    start, end = np.where(cut_ref > 0.1 * ref_val_delta + ref_val_min)[0][[0,-1]]
+    start, end = np.where(cut_ref > 0.1 * ref_val_delta + ref_val_min)[0][[0, -1]]
     print("10 % load starts, end", start, end)
     # TODO see if this can be hardcoded even less
     slice_to_fit = slice(start, end)
     # diff_ref = np.diff(cut_ref, n=1)
     # diff_dut = np.diff(cut_dut, n=1)
 
-
     # scale_ref * value_ref = scale_dut * value_dut (same weight)
     # scale_ref * value_ref/ value_dut = scale_dut
 
     print("fitline")
     fit_line, (resid, _, _, _) = np.polynomial.polynomial.Polynomial.fit(
-        cut_dut[slice_to_fit], cut_ref[slice_to_fit], 1, full=True)
+        cut_dut[slice_to_fit], cut_ref[slice_to_fit], 1, full=True
+    )
     fit_coef = fit_line.convert().coef
 
     # figure out where the error is coming from
     if to_plot:
         fit_ref = fit_line(cut_dut)
         error = fit_ref - cut_ref
-        
+
         plt.plot(cut_ref)
         plt.plot(cut_dut)
-        plt.plot(error*1000)
+        plt.plot(error * 1000)
         plt.show()
-
 
     scale_dut = fit_coef[1] * scale_ref
     print("scale", scale_dut)
-    print("error from  spec:", (1 - scale_dut / 100000)*100, "%")
+    print("error from  spec:", (1 - scale_dut / 100000) * 100, "%")
     print("error at 200kg (if using 2mv/V):", 200 - scale_dut * 0.002)
     print("offset", fit_coef[0])
     print("residual", resid[0])
 
     return scale_dut, resid[0]
-
 
 
 if __name__ == "__main__":
@@ -166,6 +162,6 @@ if __name__ == "__main__":
     values_dut = np.loadtxt(dir_calibration / "loadcell_values_dut.txt")
     loadcell_ref_scale = np.loadtxt(dir_calibration / "loadcell_ref_scale.txt")
 
-    parse_calibration_curve(values_ref, values_dut, float(loadcell_ref_scale), to_plot=True)
-
-
+    parse_calibration_curve(
+        values_ref, values_dut, float(loadcell_ref_scale), to_plot=True
+    )

@@ -31,11 +31,13 @@ range is 0 to 655359(eg maximum acceleration rate is -100% to 100% in 100ms)
 
 
 """
+
 import statistics
 import time
 from pathlib import Path
 from datetime import datetime
 import numpy as np
+
 # import argparse
 
 from tqdm import tqdm
@@ -46,16 +48,16 @@ from Phidget22.BridgeGain import BridgeGain
 from roboclaw_3 import Roboclaw
 from parse_calibration_curve import parse_calibration_curve
 
+
 def generate_calibration_curve(
-        motor_com: str,
-        motor_baud: int,
-        motor_addr: int,
-        loadcell_ref_scale: float,
-        loadcell_ref_ch: int,
-        loadcell_dut_ch: int
+    motor_com: str,
+    motor_baud: int,
+    motor_addr: int,
+    loadcell_ref_scale: float,
+    loadcell_ref_ch: int,
+    loadcell_dut_ch: int,
 ) -> tuple[list[float], list[float]]:
-    """Return the readings of both loadcells.
-    """
+    """Return the readings of both loadcells."""
     ## motor controller setup
     print("setting up motor connection")
     motor = Roboclaw(motor_com, motor_baud)
@@ -74,7 +76,6 @@ def generate_calibration_curve(
     print("opening attachement to bridge")
     ch_ref.openWaitForAttachment(1000)
     ch_dut.openWaitForAttachment(1000)
-
 
     # Setting the VoltageRatioChangeTrigger to 0 will result in the channel
     # firing events every DataInterval
@@ -105,6 +106,7 @@ def generate_calibration_curve(
     # To stop the recording data set the call back to None.
     # It takes a second or so to start getting data after the callback is set.
     loadcell_values = {loadcell_ref_ch: [], loadcell_dut_ch: []}
+
     def save_bridge_value(vri, value):
         loadcell_values[vri.getChannel()].append(value)
 
@@ -116,8 +118,8 @@ def generate_calibration_curve(
     with tqdm(total=tare_num_vals, desc="Taring", unit="samples") as pbar:
         while (num_vals := len(loadcell_values[loadcell_ref_ch])) < tare_num_vals:
             pbar.update(num_vals - pbar.n)
-            time.sleep(loadcell_sample_interval/1000)
-        pbar.update(num_vals-pbar.n)
+            time.sleep(loadcell_sample_interval / 1000)
+        pbar.update(num_vals - pbar.n)
 
     ch_ref.setOnVoltageRatioChangeHandler(None)
     ch_dut.setOnVoltageRatioChangeHandler(None)
@@ -136,7 +138,7 @@ def generate_calibration_curve(
 
     ## Assume positive is compression
     # TODO - should just take the absolute value instead
-    
+
     ## Calibration curve
     # The linear motor can be back driven, so if it is pushing on the loadcell
     # and not being driven, it will slowly back off.
@@ -145,7 +147,7 @@ def generate_calibration_curve(
     # The motor has 2 ways to move:
     #  set velocity OR set velocity & acceleration limit
     # Any sharp acceleration will cause issues for calibration since the two
-    # loadcells are not recording data at the same time. The values are 
+    # loadcells are not recording data at the same time. The values are
     # interploated. The less acceleartion, the more accurate the calibration.
 
     # 1. Push until a minimal load using a set velocity. The contact between
@@ -155,7 +157,7 @@ def generate_calibration_curve(
     # 4. Pull back slowly and with limited acceleration until minimal load.
     # 5. Pull back quickly to reset the position.
     # To generate the curve, push the loadcell to the test load, and then back
-    # off slowly. The data from backing off should be used for 
+    # off slowly. The data from backing off should be used for
 
     print("recording the values")
 
@@ -166,25 +168,28 @@ def generate_calibration_curve(
     # Start recodring both loadcells
     ch_ref.setOnVoltageRatioChangeHandler(save_bridge_value)
     ch_dut.setOnVoltageRatioChangeHandler(save_bridge_value)
-    
+
     # Wait for the phidgets to start recording
     while len(loadcell_values[loadcell_ref_ch]) == 0:
-        time.sleep(loadcell_sample_interval/1000)
+        time.sleep(loadcell_sample_interval / 1000)
 
     # 1. Push to minimal load
     # currently the pressing bolt has a soft cap on it which pops off a bit
     # at 4kg it is fully pressed in.
     # TODO fix the mechanical cap so that this load can be lower.
     load_minimal = 4
-    
+
     print("Push to minimal load,", load_minimal)
     motor.ForwardM1(motor_addr, 50)
     with tqdm(total=load_minimal, unit="kg") as pbar:
-        while (cur_load := convert_ref(loadcell_values[loadcell_ref_ch][-1])) < load_minimal:
+        while (
+            cur_load := convert_ref(loadcell_values[loadcell_ref_ch][-1])
+        ) < load_minimal:
             pbar.n = cur_load
             pbar.refresh()
-            time.sleep(loadcell_sample_interval/1000)
-        pbar.n = load_minimal  # technically it could be larger, but tqdm doesn't like it
+            time.sleep(loadcell_sample_interval / 1000)
+        # technically it could be larger, but tqdm doesn't like it
+        pbar.n = load_minimal
         pbar.refresh()
     motor.ForwardM1(motor_addr, 0)
     time.sleep(0.5)  # time to slow the motor down to a stop.
@@ -196,15 +201,17 @@ def generate_calibration_curve(
     # - the loadcell bottoms out at 150kg TODO fix this
     test_load = 70.0
     print("Push to test load,", test_load)
-    # Duty -32768 to +32767, accel: is 0 to 655359 
+    # Duty -32768 to +32767, accel: is 0 to 655359
     # TODO figure out the numbers that work
-    accel_limit = int(0.01*655359)
-    motor.DutyAccelM1(motor_addr, accel_limit, int(0.6*32767))
+    accel_limit = int(0.01 * 655359)
+    motor.DutyAccelM1(motor_addr, accel_limit, int(0.6 * 32767))
     with tqdm(total=test_load, unit="kg") as pbar:
-        while (cur_load := convert_ref(loadcell_values[loadcell_ref_ch][-1])) < test_load:
+        while (
+            cur_load := convert_ref(loadcell_values[loadcell_ref_ch][-1])
+        ) < test_load:
             pbar.n = cur_load
             pbar.refresh()
-            time.sleep(loadcell_sample_interval/1000)
+            time.sleep(loadcell_sample_interval / 1000)
         pbar.n = test_load  # technically it could be larger, but tqdm doesn't like it
         pbar.refresh()
 
@@ -217,16 +224,18 @@ def generate_calibration_curve(
     print("load now at:", cur_load)
 
     # 4. Reverse slowly to generate the data for the curve
-    motor.DutyAccelM1(motor_addr, accel_limit, -int(0.1*32767))
+    motor.DutyAccelM1(motor_addr, accel_limit, -int(0.1 * 32767))
     print("Slowly reversing")
     with tqdm(total=cur_load, unit="kg") as pbar:
-        while (cur_load := convert_ref(loadcell_values[loadcell_ref_ch][-1])) > load_minimal:
+        while (
+            cur_load := convert_ref(loadcell_values[loadcell_ref_ch][-1])
+        ) > load_minimal:
             pbar.n = cur_load
             pbar.refresh()
-            time.sleep(loadcell_sample_interval/1000)
+            time.sleep(loadcell_sample_interval / 1000)
         pbar.n = cur_load
         pbar.refresh()
-    
+
     print("Num values:", len(loadcell_values[loadcell_dut_ch]))
 
     # 5. Move back quickly to reset
@@ -244,12 +253,13 @@ if __name__ == "__main__":
     # A bunch of hard coded variables for now
     # The motor controller shows up as stm virtual com port.
     # pick the first match.
-    MOTOR_COM = next(serial.tools.list_ports.grep("STMicroelectronics Virtual COM Port")).device
+    MOTOR_COM = next(
+        serial.tools.list_ports.grep("STMicroelectronics Virtual COM Port")
+    ).device
     MOTOR_BAUD = 115200  # This preconfigured for the controller
     MOTOR_ADDR = 0x80  # This is preconfigured
     # The motor controller library kinda sucks cause it needs the address passed
     # every time. TODO: just write a better one later.
-
 
     LOADCELL_REF_FSO = 3.0049 / 1000  # Full Scale output in V/V
     LOADCELL_REF_CAPACITY = 500 * 0.45359237  # in kg converted from lbs
@@ -264,27 +274,25 @@ if __name__ == "__main__":
     loadcell_dut_serial = input("Serial no of DUT: ")
 
     loadcell_values_ref, loadcell_values_dut = generate_calibration_curve(
-        MOTOR_COM, 
-        MOTOR_BAUD, 
-        MOTOR_ADDR, 
-        LOADCELL_REF_SCALE, 
-        LOADCELL_REF_CH, 
-        LOADCELL_DUT_CH
+        MOTOR_COM,
+        MOTOR_BAUD,
+        MOTOR_ADDR,
+        LOADCELL_REF_SCALE,
+        LOADCELL_REF_CH,
+        LOADCELL_DUT_CH,
     )
 
     scale_dut, resid = parse_calibration_curve(
-        loadcell_values_ref, 
-        loadcell_values_dut, 
-        LOADCELL_REF_SCALE
+        loadcell_values_ref, loadcell_values_dut, LOADCELL_REF_SCALE
     )
 
-    # TODO Save loadcell values somewhere 
+    # TODO Save loadcell values somewhere
     # save 5 values - the 3 inputs to the function (to reporduce) and the output
     date_str = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     dir_data = Path("../loadcell_calibration_data/data/")
     dir_cal = dir_data / loadcell_dut_serial / date_str
     print("Saving calibration curves to:", dir_cal)
-    dir_cal.mkdir(parents= True, exist_ok=True)
+    dir_cal.mkdir(parents=True, exist_ok=True)
     np.savetxt(dir_cal / "loadcell_values_ref.txt", loadcell_values_ref)
     np.savetxt(dir_cal / "loadcell_values_dut.txt", loadcell_values_dut)
     np.savetxt(dir_cal / "loadcell_ref_scale.txt", [LOADCELL_REF_SCALE])
@@ -298,7 +306,6 @@ if __name__ == "__main__":
         print(line, file=f)
         # f.write(line)
         # f.write("\n")
-
 
     # Note: the mavin loadcell should be 2 mV / V for 200kg, which works out to
     # a scale of 200 kg / 2mV/V = 100 kg / mv/V or 100'000 kg / V/V
