@@ -905,7 +905,21 @@ class Roboclaw:
             buffer,
         )
 
-    def DutyAccelM1(self, address, accel, duty):
+    def DutyAccelM1(self, address: int, accel: int, duty: int) -> bool:
+        """Drive M1 with a signed duty and acceleration value.
+        The sign indicates which direction the motor will run. The acceleration
+        values are not signed. This command is used to drive the motor by PWM
+        and using an acceleration value for ramping.
+        Accel is the rate per second at which the duty changes from the current
+        duty to the specified duty.
+        The duty value is signed and the range is -32768 to +32767
+        (eg. +-100% duty).
+        The accel value range is 0 to 655359
+        (eg maximum acceleration rate is -100% to 100% in 100ms)
+
+        Send: [Address, 52, Duty(2 bytes), Accel(2 Bytes), CRC(2 bytes)]
+        Receive: [0xFF]
+        """
         return self._writeS24(address, self.Cmd.M1DUTYACCEL, duty, accel)
 
     def DutyAccelM2(self, address, accel, duty):

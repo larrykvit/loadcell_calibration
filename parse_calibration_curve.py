@@ -108,15 +108,16 @@ def parse_calibration_curve(
     ref_val_delta = ref_val_max - ref_val_min
 
     # the acceleration starts after a hardcoded minimal value
-    # currently it is 4kg and the max load of 100kg. That means that that 10%
     # should cut out all load that doesn't use smooth moving.
-    start, end = np.where(cut_ref > 0.1 * ref_val_delta + ref_val_min)[0][[0, -1]]
-    print("10 % load starts, end", start, end)
     # TODO see if this can be hardcoded even less
+    min_load_fraction = 0.1
+    start, end = np.where(cut_ref > min_load_fraction * ref_val_delta + ref_val_min)[0][
+        [0, -1]
+    ]
+    print(100 * min_load_fraction, "% load starts, end", start, end)
     slice_to_fit = slice(start, end)
-    # diff_ref = np.diff(cut_ref, n=1)
-    # diff_dut = np.diff(cut_dut, n=1)
 
+    # How the math works out:
     # scale_ref * value_ref = scale_dut * value_dut (same weight)
     # scale_ref * value_ref/ value_dut = scale_dut
 
@@ -126,10 +127,15 @@ def parse_calibration_curve(
     )
     fit_coef = fit_line.convert().coef
 
+    fit_ref = fit_line(cut_dut)
+    error = fit_ref - cut_ref
+
+    print("Error in the fit region, min, max:")
+    print(np.min(error[slice_to_fit]))
+    print(np.max(error[slice_to_fit]))
+
     # figure out where the error is coming from
     if to_plot:
-        fit_ref = fit_line(cut_dut)
-        error = fit_ref - cut_ref
 
         plt.plot(cut_ref)
         plt.plot(cut_dut)

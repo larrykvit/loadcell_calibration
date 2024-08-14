@@ -18,18 +18,6 @@ about half speed forward and 0 = full stop.
 Send: [Address, 0, Value, CRC(2 bytes)]
 Receive: [0xFF]
 
-
-52 - Drive M1 With Signed Duty And Acceleration
-Drive M1 with a signed duty and acceleration value. The sign indicates which direction the motor
-will run. The acceleration values are not signed. This command is used to drive the motor by
-PWM and using an acceleration value for ramping. Accel is the rate per second at which the duty
-changes from the current duty to the specified duty.
-Send: [Address, 52, Duty(2 bytes), Accel(2 Bytes), CRC(2 bytes)]
-Receive: [0xFF]
-The duty value is signed and the range is -32768 to +32767(eg. +-100% duty). The accel value
-range is 0 to 655359(eg maximum acceleration rate is -100% to 100% in 100ms)
-
-
 """
 
 import statistics
@@ -134,6 +122,10 @@ def generate_calibration_curve(
         """Convert reference value to weight"""
         return (value - tare_ref) * loadcell_ref_scale
 
+    def get_ref_load() -> float:
+        """Gets the latest reference loadcell value and converts to kg"""
+        return convert_ref(loadcell_values[loadcell_ref_ch][-1])
+
     print("tare * scale", tare_ref * loadcell_ref_scale, "kg")
 
     ## Assume positive is compression
@@ -161,7 +153,6 @@ def generate_calibration_curve(
 
     print("recording the values")
 
-    # TODO - consider keeping the tare values for better post processing.
     # clear the value
     loadcell_values = {loadcell_ref_ch: [], loadcell_dut_ch: []}
 
@@ -174,17 +165,14 @@ def generate_calibration_curve(
         time.sleep(loadcell_sample_interval / 1000)
 
     # 1. Push to minimal load
-    # currently the pressing bolt has a soft cap on it which pops off a bit
-    # at 4kg it is fully pressed in.
-    # TODO fix the mechanical cap so that this load can be lower.
-    load_minimal = 4
+    # This ensures that there is contact between the two loadcells. Allows for
+    # smoother pushing.
+    load_minimal = 2
 
     print("Push to minimal load,", load_minimal)
-    motor.ForwardM1(motor_addr, 50)
+    motor.ForwardM1(motor_addr, 40)
     with tqdm(total=load_minimal, unit="kg") as pbar:
-        while (
-            cur_load := convert_ref(loadcell_values[loadcell_ref_ch][-1])
-        ) < load_minimal:
+        while (cur_load := get_ref_load()) < load_minimal:
             pbar.n = cur_load
             pbar.refresh()
             time.sleep(loadcell_sample_interval / 1000)
@@ -199,16 +187,14 @@ def generate_calibration_curve(
     # TODO this load is much lower than the maximum for two reasons:
     # - it takes time to slow down, so it overshoot by a lot
     # - the loadcell bottoms out at 150kg TODO fix this
-    test_load = 70.0
+    test_load = 120.0
     print("Push to test load,", test_load)
     # Duty -32768 to +32767, accel: is 0 to 655359
     # TODO figure out the numbers that work
     accel_limit = int(0.01 * 655359)
-    motor.DutyAccelM1(motor_addr, accel_limit, int(0.6 * 32767))
+    motor.DutyAccelM1(motor_addr, accel_limit, int(0.3 * 32767))
     with tqdm(total=test_load, unit="kg") as pbar:
-        while (
-            cur_load := convert_ref(loadcell_values[loadcell_ref_ch][-1])
-        ) < test_load:
+        while (cur_load := get_ref_load()) < test_load:
             pbar.n = cur_load
             pbar.refresh()
             time.sleep(loadcell_sample_interval / 1000)
@@ -216,20 +202,20 @@ def generate_calibration_curve(
         pbar.refresh()
 
     # 3. Peak test load
-    motor.DutyAccelM1(motor_addr, accel_limit, 0)
-    # motor.ForwardM1(motor_addr, 10)  # figure out a number that holds the load constantish
-    print("Hangout at peak load")
+    # The motor can be back driven. A small duty cycle is used to try to keep
+    # the motor still.
+    motor.DutyAccelM1(motor_addr, accel_limit, int(0.16 * 32767))
+    print("Hangout at peak load:", get_ref_load())
     time.sleep(2.0)
-    cur_load = convert_ref(loadcell_values[loadcell_ref_ch][-1])
+
+    cur_load = get_ref_load()
     print("load now at:", cur_load)
 
     # 4. Reverse slowly to generate the data for the curve
-    motor.DutyAccelM1(motor_addr, accel_limit, -int(0.1 * 32767))
+    motor.DutyAccelM1(motor_addr, accel_limit, -int(0.35 * 32767))
     print("Slowly reversing")
     with tqdm(total=cur_load, unit="kg") as pbar:
-        while (
-            cur_load := convert_ref(loadcell_values[loadcell_ref_ch][-1])
-        ) > load_minimal:
+        while (cur_load := get_ref_load()) > load_minimal:
             pbar.n = cur_load
             pbar.refresh()
             time.sleep(loadcell_sample_interval / 1000)
