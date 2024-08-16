@@ -184,14 +184,14 @@ def generate_calibration_curve(
     print("Num values:", len(loadcell_values[loadcell_dut_ch]))
 
     # 2. Push to test load
-    # TODO this load is much lower than the maximum for two reasons:
-    # - it takes time to slow down, so it overshoot by a lot
-    # - the loadcell bottoms out at 150kg TODO fix this
-    test_load = 120.0
+    # TODO this load is lower than the maximum for two reasons:
+    # - it takes time to slow down, so it overshoots (depends on load and speed)
+    # - the loadcell bottoms out at ~200kg TODO fix this
+    test_load = 180.0
     print("Push to test load,", test_load)
     # Duty -32768 to +32767, accel: is 0 to 655359
     # TODO figure out the numbers that work
-    accel_limit = int(0.01 * 655359)
+    accel_limit = int(0.005 * 655359)
     motor.DutyAccelM1(motor_addr, accel_limit, int(0.3 * 32767))
     with tqdm(total=test_load, unit="kg") as pbar:
         while (cur_load := get_ref_load()) < test_load:
@@ -212,7 +212,7 @@ def generate_calibration_curve(
     print("load now at:", cur_load)
 
     # 4. Reverse slowly to generate the data for the curve
-    motor.DutyAccelM1(motor_addr, accel_limit, -int(0.35 * 32767))
+    motor.DutyAccelM1(motor_addr, accel_limit, -int(0.25 * 32767))
     print("Slowly reversing")
     with tqdm(total=cur_load, unit="kg") as pbar:
         while (cur_load := get_ref_load()) > load_minimal:
